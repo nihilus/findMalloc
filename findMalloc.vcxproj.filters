@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{9a76bba7-8ec3-4477-9ea2-d9e5a55f0876}</UniqueIdentifier>
+      <Extensions>.cpp;.cxx;.c</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{59d8c657-16b1-4603-b342-f99777e09da1}</UniqueIdentifier>
+      <Extensions>.h;.hpp</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{175c1011-654f-4633-a127-4d2df5eff21c}</UniqueIdentifier>
+      <Extensions>.rc;.rc2;.ico;.gif;.bmp;</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="findMalloc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>
