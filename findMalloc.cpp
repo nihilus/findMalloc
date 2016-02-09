@@ -187,10 +187,10 @@ ea_t find_function_EA_by_name(char *name)
 	for (uint i = 0; i < get_func_qty(); ++i)
 	{
 		func_t *f = getn_func(i);
-		char buffer[MAXSTR];
-		get_short_name(BADADDR, f->startEA, buffer, MAXSTR);
+		qstring buffer;
+		get_short_name(&buffer, f->startEA);
 		//qfprintf(file,"%s \n", buffer);
-		if(strncmp(buffer, name, count) == 0){
+		if(strncmp(buffer.c_str(), name, count) == 0){
 			return f->startEA;
 		}
 	}
@@ -464,19 +464,19 @@ int assign_type(ea_t address, int *value)
 
 void analyze_malloc_xref_ex(char *name, ea_t xref_addr, int push_count)
 {
-	char buffer[MAXSTR];
+	qstring buffer;
 	int value = 0;
 	int type;
 	op_t memory_size_var;
 	if(is_trampoline(xref_addr)){
 		func_t *func = get_func(xref_addr);
-//		msg("analyze_malloc_xref: %s %a - trampoline!\n", name, xref_addr);
+		//msg("analyze_malloc_xref: %s %a - trampoline!\n", name, xref_addr);
 		//too easy, how about mov ebp,esp jmp:malloc?
 		if(func){
-			char buff[MAXSTR];
-			get_short_name(BADADDR, func->startEA, buff, MAXSTR);
+			qstring buff;
+			get_short_name(&buff, func->startEA);
 			//get_long_name(BADADDR, func->startEA, buffer, MAXSTR);
-			TFuncMallocWrapper new_malloc = TFuncMallocWrapper(buff, name, push_count, xref_addr, TRAMPOLINE);
+			TFuncMallocWrapper new_malloc = TFuncMallocWrapper((char *)buff.c_str(), name, push_count, xref_addr, TRAMPOLINE);
 			if(!does_exist(new_malloc))
 				funcMalloc_wrappers.push_back(new_malloc);
 		}
@@ -529,9 +529,9 @@ void analyze_malloc_xref_ex(char *name, ea_t xref_addr, int push_count)
 			//too easy, how about mov ebp,esp call:malloc?
 			if(func)
 
-				get_short_name(BADADDR, func->startEA, buffer, MAXSTR);
+				get_short_name(&buffer, func->startEA);
 				//get_long_name(BADADDR, func->startEA, buffer, MAXSTR);
-				TFuncMallocWrapper new_malloc = TFuncMallocWrapper(buffer, name, memory_size_var.addr / sizeof(ea_t) - 1, func->startEA, WRAPPER);
+				TFuncMallocWrapper new_malloc = TFuncMallocWrapper((char *)buffer.c_str(), name, memory_size_var.addr / sizeof(ea_t) - 1, func->startEA, WRAPPER);
 				if(!does_exist(new_malloc))
 					funcMalloc_wrappers.push_back(new_malloc);
 				//funcMalloc.push_back(TFuncMalloc("here var name", memory_size_var.addr / sizeof(ea_t),func->startEA, WRAPPER));
@@ -600,7 +600,7 @@ void find_alloc_calls_warreps_ex(FILE* f, TFuncMallocWrapper func)
 void pretty_printing_ex(FILE* f, TFuncMallocWrapper func)
 {
 	func_t *callee_func;
-	char name_of_malloc_callee_function[MAXSTR];
+	qstring name_of_malloc_callee_function;
 	int func_name_set = 0;
 
 	for(int i = 0; i < Malloc_calls.size(); i++){
@@ -611,13 +611,13 @@ void pretty_printing_ex(FILE* f, TFuncMallocWrapper func)
 
 		if(callee_func){
 			func_name_set = 1;
-			get_short_name(BADADDR, callee_func->startEA, name_of_malloc_callee_function, MAXSTR);
+			get_short_name(&name_of_malloc_callee_function, callee_func->startEA);
 			//generate_disasm_line(callee_func->startEA, name_of_malloc_callee_function, sizeof(name_of_malloc_callee_function));
 			//tag_remove(name_of_malloc_callee_function, name_of_malloc_callee_function, sizeof(name_of_malloc_callee_function));
 		}
 
 		if(func_name_set)
-			qfprintf(f,"%s argNumber = %d ----> %s xref: at %a %s\n", func.alloc_func_name, func.push_malloc_size_count, func.ancestor, Malloc_calls[i].address, name_of_malloc_callee_function);
+			qfprintf(f,"%s argNumber = %d ----> %s xref: at %a %s\n", func.alloc_func_name, func.push_malloc_size_count, func.ancestor, Malloc_calls[i].address, name_of_malloc_callee_function.c_str());
 		else
 			qfprintf(f,"%s argNumber = %d ----> %s xref: at %a %s\n", func.alloc_func_name, func.push_malloc_size_count, func.ancestor, Malloc_calls[i].address, "CISSRT_undefined_function");
 			//qfprintf(f,"%s xref: at %a %s\n", func.alloc_func_name, Malloc_calls[i].address, "CISSRT_undefined_function");
@@ -681,7 +681,7 @@ void pretty_printing_ex(FILE* f, TFuncMalloc func)
 {
 
 	func_t *callee_func;
-	char name_of_malloc_callee_function[MAXSTR];
+	qstring name_of_malloc_callee_function;
 	int func_name_set = 0;
 
 
@@ -692,13 +692,13 @@ void pretty_printing_ex(FILE* f, TFuncMalloc func)
 
 		if(callee_func){
 			func_name_set = 1;
-			get_short_name(BADADDR, callee_func->startEA, name_of_malloc_callee_function, MAXSTR);
+			get_short_name(&name_of_malloc_callee_function, callee_func->startEA);
 			//generate_disasm_line(callee_func->startEA, name_of_malloc_callee_function, sizeof(name_of_malloc_callee_function));
 			//tag_remove(name_of_malloc_callee_function, name_of_malloc_callee_function, sizeof(name_of_malloc_callee_function));
 		}
 
 		if(func_name_set)
-			qfprintf(f,"%s xref: at %a %s\n", func.alloc_func_name, Malloc_calls[i].address, name_of_malloc_callee_function);
+			qfprintf(f,"%s xref: at %a %s\n", func.alloc_func_name, Malloc_calls[i].address, name_of_malloc_callee_function.c_str());
 		else
 			qfprintf(f,"%s xref: at %a %s\n", func.alloc_func_name, Malloc_calls[i].address, "CISSRT_undefined_function");
 		
