@@ -136,7 +136,7 @@ void IDAP_term(void)
 //returns list of xrefs to, and size of list array
 ea_t* find_import_xref(ea_t loc, int *size)
 {
-	//*size = 0;	
+	// *size = 0;	
 	int count = 0, i = 0;
 	xrefblk_t xb;
 	ea_t *list;
@@ -154,7 +154,7 @@ ea_t* find_import_xref(ea_t loc, int *size)
 	}
 
 	for (bool ok = xb.first_to(loc, XREF_ALL); ok; ok = xb.next_to()) {
-		//*list++ = xb.from;
+		// *list++ = xb.from;
 		list[i] = xb.from;
 		i++;
 	}
@@ -167,10 +167,10 @@ ea_t find_import_loc(const char *name)
 {
 	for (int i = 0; i < get_segm_qty(); i++) {
 		segment_t *seg = getnseg(i);
-		//msg("segment[%d]  %a %a\n", i, seg->startEA, seg->endEA); 
+		//msg("segment[%d]  %a %a\n", i, seg->start_ea, seg->endEA); 
 		if (seg->type == SEG_XTRN) {
 			//msg("segment[%d]  == SEG_XTRN\n", i); 
-			ea_t loc = get_name_ea(seg->startEA, name);
+			ea_t loc = get_name_ea(seg->start_ea, name);
 			if (loc != BADADDR) {
 				return loc;
 			}
@@ -188,10 +188,10 @@ ea_t find_function_EA_by_name(char *name)
 	{
 		func_t *f = getn_func(i);
 		qstring buffer;
-		get_short_name(&buffer, f->startEA);
+		get_short_name(&buffer, f->start_ea);
 		//qfprintf(file,"%s \n", buffer);
 		if(strncmp(buffer.c_str(), name, count) == 0){
-			return f->startEA;
+			return f->start_ea;
 		}
 	}
 	return BADADDR;	
@@ -204,17 +204,18 @@ ea_t find_instruction_backward(ea_t start, uint16 itype)
 	func_t *f = get_func(start);
 	if(f)
 	{
-		ea_t addr = prev_head(start, f->startEA);
+		ea_t addr = prev_head(start, f->start_ea);
 		while (addr != BADADDR)
 		{
-			flags_t flags = getFlags(addr);
-			if (isHead(flags) && isCode(flags))
+			flags_t flags = get_flags(addr);
+			if (is_head(flags) && is_code(flags))
 			{
-				ua_ana0(addr);
-				if(cmd.itype == itype)return addr;
+				insn_t insn;
+				decode_insn(&insn, addr);
+				if(insn.itype == itype)return addr;
 
 			}
-			addr = prev_head(addr, f->startEA);
+			addr = prev_head(addr, f->start_ea);
 		}
 	}
 	return BADADDR;
@@ -226,18 +227,19 @@ ea_t find_instruction_N_times_backward(ea_t start, uint16 itype, int count)
 	int curr_count = 0;
 	if(f)
 	{
-		ea_t addr = prev_head(start, f->startEA);
+		ea_t addr = prev_head(start, f->start_ea);
 		while (addr != BADADDR)
 		{
-			flags_t flags = getFlags(addr);
-			if (isHead(flags) && isCode(flags))
+			flags_t flags = get_flags(addr);
+			if (is_head(flags) && is_code(flags))
 			{
-				ua_ana0(addr);
-				if(cmd.itype == itype)curr_count++;
+				insn_t insn;
+				decode_insn(&insn, addr);
+				if(insn.itype == itype)curr_count++;
 				if(curr_count == count)return addr;
 
 			}
-			addr = prev_head(addr, f->startEA);
+			addr = prev_head(addr, f->start_ea);
 		}
 	}
 	return BADADDR;
@@ -248,18 +250,19 @@ ea_t find_instruction_N_times_backward(ea_t start, uint16 itype, int count)
 ea_t find_instruction_that_changes_operand_backward_smart(ea_t start, op_t operand)
 {
 	func_t *f = get_func(start);
-	char buf[MAXSTR];
-	char instr_clean[MAXSTR];
+	qstring buf;
+	qstring instr_clean;
 	if(f)
 	{
-		ea_t addr = prev_head(start, f->startEA);
+		ea_t addr = prev_head(start, f->start_ea);
 		while (addr != BADADDR)
 		{
-			flags_t flags = getFlags(addr);
-			if (isHead(flags) && isCode(flags))
+			flags_t flags = get_flags(addr);
+			if (is_head(flags) && is_code(flags))
 			{
-				ua_ana0(addr);
-				switch(cmd.itype){	
+				insn_t insn;
+				decode_insn(&insn, addr);
+				switch(insn.itype){	
 					case NN_lea:
 					case NN_pop:
 					case NN_shl:
@@ -281,8 +284,8 @@ ea_t find_instruction_that_changes_operand_backward_smart(ea_t start, op_t opera
 					case NN_mov:
 					case NN_movsx:
 					case NN_movzx:{
-						for(int i = 0; cmd.Operands[i].type != o_void; i++){
-							if((cmd.Operands[i].type == operand.type) && (cmd.Operands[i].reg == operand.reg)){
+						for(int i = 0; insn.ops[i].type != o_void; i++){
+							if((insn.ops[i].type == operand.type) && (insn.ops[i].reg == operand.reg)){
 								return addr;
 							}
 
@@ -292,7 +295,7 @@ ea_t find_instruction_that_changes_operand_backward_smart(ea_t start, op_t opera
 				}
 
 			}
-			addr = prev_head(addr, f->startEA);
+			addr = prev_head(addr, f->start_ea);
 		}
 	}
 	return BADADDR;
@@ -310,30 +313,32 @@ char* construct_output_filename(char *prefix)
 /*
 op_t get_first_operand(FILE *f, ea_t addr)
 {
-	char buf[MAXSTR];
-	char instr_clean[MAXSTR];
+	qstring buf;
+	qstring instr_clean;
+	insn_t insn;
 	// Store the disassembled text in buf
-	ua_ana0(addr);
-	generate_disasm_line(cmd.ea, buf, sizeof(buf)-1);
+	decode_insn(&insn, addr);
+	generate_disasm_line(&buf, insn.ea);
 	// This will appear as colour-tagged text (which will
 	// be mostly unreadable in IDA's
-	tag_remove(buf, instr_clean, sizeof(instr_clean)-1);
+	tag_remove(&buf, instr_clean, sizeof(instr_clean)-1);
 	//qfprintf(f,"get_first_operand disasm instruction: %s\n", instr_clean);
 
-	for(int i = 0; cmd.Operands[i].type != o_void; i++){
-		qfprintf(f,"operand number %d, type %d, reg %d, phrase %d, value %a, addr %a\n", i, cmd.Operands[i].type,cmd.Operands[i].reg,
-			cmd.Operands[i].phrase,cmd.Operands[i].value, cmd.Operands[i].addr);
-		//if(cmd.Operands[i].type == o_reg) return cmd.Operands[i];
+	for(int i = 0; insn.ops[i].type != o_void; i++){
+		qfprintf(f,"operand number %d, type %d, reg %d, phrase %d, value %a, addr %a\n", i, insn.ops[i].type,insn.ops[i].reg,
+			insn.ops[i].phrase,insn.ops[i].value, insn.ops[i].addr);
+		//if(insn.ops[i].type == o_reg) return insn.ops[i];
 	}	
-	return cmd.Operands[0];
+	return insn.ops[0];
 	
 }
 */
 op_t get_first_operand_new(ea_t addr)
 {
-	ua_ana0(addr);
+	insn_t insn;
+	decode_insn(&insn, addr);
 
-	return cmd.Operands[0];
+	return insn.ops[0];
 	
 }
 
@@ -381,7 +386,7 @@ ea_t* find_function_xref(char *name, int *size)
 	}
 
 	for (bool ok = xb.first_to(func_addr, XREF_ALL); ok; ok = xb.next_to()) {
-		//*list++ = xb.from;
+		// *list++ = xb.from;
 		list[i] = xb.from;
 		i++;
 	}
@@ -417,7 +422,7 @@ ea_t* find_function_xref(ea_t addr, int *size)
 	}
 
 	for (bool ok = xb.first_to(addr, XREF_ALL); ok; ok = xb.next_to()) {
-		//*list++ = xb.from;
+		// *list++ = xb.from;
 		list[i] = xb.from;
 		i++;
 	}
@@ -429,8 +434,9 @@ ea_t* find_function_xref(ea_t addr, int *size)
 
 int is_trampoline(ea_t address)
 {
-	ua_ana0(address);
-	if(cmd.itype == NN_jmp)return 1;
+	insn_t insn;
+	decode_insn(&insn, address);
+	if(insn.itype == NN_jmp)return 1;
 	return 0;
 }
 
@@ -438,14 +444,15 @@ int is_trampoline(ea_t address)
 //By now - it's full os shitty false positives
 int assign_type(ea_t address, int *value)
 {
-	flags_t flags = getFlags(address);
-	if (isHead(flags) && isCode(flags))
+	flags_t flags = get_flags(address);
+	if (is_head(flags) && is_code(flags))
 	{
-		ua_ana0(address);
+		insn_t insn;
+		decode_insn(&insn, address);
 
-		if(cmd.itype == NN_mov)
-			if(cmd.Operands[1].type == o_imm){
-				*value = cmd.Operands[1].value;
+		if(insn.itype == NN_mov)
+			if(insn.ops[1].type == o_imm){
+				*value = insn.ops[1].value;
 				return CONSTVALUE;
 			}
 			else
@@ -474,8 +481,8 @@ void analyze_malloc_xref_ex(char *name, ea_t xref_addr, int push_count)
 		//too easy, how about mov ebp,esp jmp:malloc?
 		if(func){
 			qstring buff;
-			get_short_name(&buff, func->startEA);
-			//get_long_name(BADADDR, func->startEA, buffer, MAXSTR);
+			get_short_name(&buff, func->start_ea);
+			//get_long_name(BADADDR, func->start_ea, buffer, MAXSTR);
 			TFuncMallocWrapper new_malloc = TFuncMallocWrapper((char *)buff.c_str(), name, push_count, xref_addr, TRAMPOLINE);
 			if(!does_exist(new_malloc))
 				funcMalloc_wrappers.push_back(new_malloc);
@@ -529,12 +536,12 @@ void analyze_malloc_xref_ex(char *name, ea_t xref_addr, int push_count)
 			//too easy, how about mov ebp,esp call:malloc?
 			if(func)
 
-				get_short_name(&buffer, func->startEA);
-				//get_long_name(BADADDR, func->startEA, buffer, MAXSTR);
-				TFuncMallocWrapper new_malloc = TFuncMallocWrapper((char *)buffer.c_str(), name, memory_size_var.addr / sizeof(ea_t) - 1, func->startEA, WRAPPER);
+				get_short_name(&buffer, func->start_ea);
+				//get_long_name(BADADDR, func->start_ea, buffer, MAXSTR);
+				TFuncMallocWrapper new_malloc = TFuncMallocWrapper((char *)buffer.c_str(), name, memory_size_var.addr / sizeof(ea_t) - 1, func->start_ea, WRAPPER);
 				if(!does_exist(new_malloc))
 					funcMalloc_wrappers.push_back(new_malloc);
-				//funcMalloc.push_back(TFuncMalloc("here var name", memory_size_var.addr / sizeof(ea_t),func->startEA, WRAPPER));
+				//funcMalloc.push_back(TFuncMalloc("here var name", memory_size_var.addr / sizeof(ea_t),func->start_ea, WRAPPER));
 			else{
 				TFuncMallocWrapper new_malloc = TFuncMallocWrapper("new malloc", name, memory_size_var.addr / sizeof(ea_t) - 1, xref_addr, WRAPPER);//maybetter name malloc_at_%a?
 				if(!does_exist(new_malloc))
@@ -592,7 +599,6 @@ void find_alloc_calls_warreps_ex(FILE* f, TFuncMallocWrapper func)
 		process_list_xref_ex(f, func.alloc_func_name, list, size, func.push_malloc_size_count);
 		qfree(list);
 	}
-
 }
 
 
@@ -602,6 +608,7 @@ void pretty_printing_ex(FILE* f, TFuncMallocWrapper func)
 	func_t *callee_func;
 	qstring name_of_malloc_callee_function;
 	int func_name_set = 0;
+	insn_t insn;
 
 	for(int i = 0; i < Malloc_calls.size(); i++){
 		//qfprintf(f,"%s ----> %s xref: at %a \n", func.alloc_func_name, func.ancestor, Malloc_calls[i].address);
@@ -611,8 +618,8 @@ void pretty_printing_ex(FILE* f, TFuncMallocWrapper func)
 
 		if(callee_func){
 			func_name_set = 1;
-			get_short_name(&name_of_malloc_callee_function, callee_func->startEA);
-			//generate_disasm_line(callee_func->startEA, name_of_malloc_callee_function, sizeof(name_of_malloc_callee_function));
+			get_short_name(&name_of_malloc_callee_function, callee_func->start_ea);
+			//generate_disasm_line(callee_func->start_ea, name_of_malloc_callee_function, sizeof(name_of_malloc_callee_function));
 			//tag_remove(name_of_malloc_callee_function, name_of_malloc_callee_function, sizeof(name_of_malloc_callee_function));
 		}
 
@@ -627,49 +634,49 @@ void pretty_printing_ex(FILE* f, TFuncMallocWrapper func)
 			qfprintf(f,"Type: CONST = %d Malloc bytes\n", Malloc_calls[i].value);
 		}
 		else if(Malloc_calls[i].type == VARVALUE){
-			char buf[MAXSTR];
-			char instr_clean[MAXSTR];
+			qstring buf;
+			qstring instr_clean;
 			// Store the disassembled text in buf
-			ua_ana0(Malloc_calls[i].address_of_last_size_object_modified);
-			generate_disasm_line(cmd.ea, buf, sizeof(buf)-1);
+			decode_insn(&insn, Malloc_calls[i].address_of_last_size_object_modified);
+			generate_disasm_line(&buf, insn.ea);
 			// This will appear as colour-tagged text (which will
 			// be mostly unreadable in IDA's
-			tag_remove(buf, instr_clean, sizeof(instr_clean)-1);
+			tag_remove(&buf, instr_clean);
 			if(Malloc_calls[i].address_of_last_size_object_modified != BADADDR)
-				qfprintf(f,"Type: VAR, last modif at %a %s\n", Malloc_calls[i].address_of_last_size_object_modified, instr_clean);
+				qfprintf(f,"Type: VAR, last modif at %a %s\n", Malloc_calls[i].address_of_last_size_object_modified, instr_clean.c_str());
 			else
 				qfprintf(f,"Type: VAR, last modif lost :(");
 			//qfprintf(f,"last modif: %s\n", instr_clean);			
 		}
 		else if(Malloc_calls[i].type == VARVALUEVULN){
-			char buf[MAXSTR];
-			char instr_clean[MAXSTR];
+			qstring buf;
+			qstring instr_clean;
 			// Store the disassembled text in buf
-			ua_ana0(Malloc_calls[i].address_of_last_size_object_modified);
-			generate_disasm_line(cmd.ea, buf, sizeof(buf)-1);
+			decode_insn(&insn, Malloc_calls[i].address_of_last_size_object_modified);
+			generate_disasm_line(&buf, insn.ea);
 			// This will appear as colour-tagged text (which will
 			// be mostly unreadable in IDA's
-			tag_remove(buf, instr_clean, sizeof(instr_clean)-1);
+			tag_remove(&buf, instr_clean, sizeof(instr_clean)-1);
 			//qfprintf(f,"get_first_operand disasm instruction: %s\n", instr_clean);
 			if(Malloc_calls[i].address_of_last_size_object_modified != BADADDR)
-				qfprintf(f,"Type: VAR, Possible Integer Overflow at %a %s\n", Malloc_calls[i].address_of_last_size_object_modified, instr_clean);
+				qfprintf(f,"Type: VAR, Possible Integer Overflow at %a %s\n", Malloc_calls[i].address_of_last_size_object_modified, instr_clean.c_str());
 			else
 				qfprintf(f,"Type: VAR, last modif lost :(");
 		}
 		else if(Malloc_calls[i].type == UNDEFINED){
-			char buf[MAXSTR];
-			char instr_clean[MAXSTR];
+			qstring buf;
+			qstring instr_clean;
 			// Store the disassembled text in buf
-			ua_ana0(Malloc_calls[i].address_of_last_size_object_modified);
-			generate_disasm_line(cmd.ea, buf, sizeof(buf)-1);
+			decode_insn(&insn, Malloc_calls[i].address_of_last_size_object_modified);
+			generate_disasm_line(&buf, insn.ea);
 			// This will appear as colour-tagged text (which will
 			// be mostly unreadable in IDA's
-			tag_remove(buf, instr_clean, sizeof(instr_clean)-1);
+			tag_remove(&buf, instr_clean);
 			//qfprintf(f,"get_first_operand disasm instruction: %s\n", instr_clean);
 
 			//qfprintf(f,"Type:var bytes, Possible Integer Overflow at %a %s\n", Malloc_calls[i].address_of_last_size_object_modified, instr_clean);
 			if(Malloc_calls[i].address_of_last_size_object_modified != BADADDR)
-				qfprintf(f,"Type: UNDEFINED, at %a %s", Malloc_calls[i].address_of_last_size_object_modified, instr_clean);//shouldnt be here
+				qfprintf(f,"Type: UNDEFINED, at %a %s", Malloc_calls[i].address_of_last_size_object_modified, instr_clean.c_str());//shouldnt be here
 			else
 				qfprintf(f,"Type: UNDEFINED, last modif lost :(");
 		}
@@ -683,6 +690,7 @@ void pretty_printing_ex(FILE* f, TFuncMalloc func)
 	func_t *callee_func;
 	qstring name_of_malloc_callee_function;
 	int func_name_set = 0;
+	insn_t insn;
 
 
 	for(int i = 0; i < Malloc_calls.size(); i++){
@@ -692,8 +700,8 @@ void pretty_printing_ex(FILE* f, TFuncMalloc func)
 
 		if(callee_func){
 			func_name_set = 1;
-			get_short_name(&name_of_malloc_callee_function, callee_func->startEA);
-			//generate_disasm_line(callee_func->startEA, name_of_malloc_callee_function, sizeof(name_of_malloc_callee_function));
+			get_short_name(&name_of_malloc_callee_function, callee_func->start_ea);
+			//generate_disasm_line(callee_func->start_ea, name_of_malloc_callee_function, sizeof(name_of_malloc_callee_function));
 			//tag_remove(name_of_malloc_callee_function, name_of_malloc_callee_function, sizeof(name_of_malloc_callee_function));
 		}
 
@@ -708,48 +716,48 @@ void pretty_printing_ex(FILE* f, TFuncMalloc func)
 		}
 
 		if(Malloc_calls[i].type == VARVALUE){
-			char buffer[MAXSTR];
+			qstring buffer;
 			//char instr_clean[MAXSTR];
 			// Store the disassembled text in buf
-			ua_ana0(Malloc_calls[i].address_of_last_size_object_modified);
+			decode_insn(&insn, Malloc_calls[i].address_of_last_size_object_modified);
 
-			generate_disasm_line(cmd.ea, buffer, sizeof(buffer));
-			tag_remove(buffer, buffer, sizeof(buffer));
+			generate_disasm_line(&buffer, insn.ea);
+			tag_remove(&buffer, buffer);
 
 			if(Malloc_calls[i].address_of_last_size_object_modified != BADADDR)
-				qfprintf(f,"Type: VAR, last modif at %a %s\n", Malloc_calls[i].address_of_last_size_object_modified, buffer);
+				qfprintf(f,"Type: VAR, last modif at %a %s\n", Malloc_calls[i].address_of_last_size_object_modified, buffer.c_str());
 			else
 				qfprintf(f,"Type: VAR, last modif lost :( \n");
 			//qfprintf(f,"last modif: \n", instr_clean);			
 		}
 
 		if(Malloc_calls[i].type == VARVALUEVULN){
-			char buffer[MAXSTR];
+			qstring buffer;
 			//char instr_clean[MAXSTR];
 			// Store the disassembled text in buf
-			ua_ana0(Malloc_calls[i].address_of_last_size_object_modified);
+			decode_insn(&insn, Malloc_calls[i].address_of_last_size_object_modified);
 
-			generate_disasm_line(cmd.ea, buffer, sizeof(buffer));
-			tag_remove(buffer, buffer, sizeof(buffer));
+			generate_disasm_line(&buffer, insn.ea);
+			tag_remove(&buffer, buffer);
 
 			//qfprintf(f,"get_first_operand disasm instruction: %s\n", instr_clean);
 			if(Malloc_calls[i].address_of_last_size_object_modified != BADADDR)
-				qfprintf(f,"Type: VAR, Possible Integer Overflow %a %s\n", Malloc_calls[i].address_of_last_size_object_modified, buffer);
+				qfprintf(f,"Type: VAR, Possible Integer Overflow %a %s\n", Malloc_calls[i].address_of_last_size_object_modified, buffer.c_str());
 			else
 				qfprintf(f,"Type: VAR, last modif lost :( \n");//shouldnt be here
 		}
 
 		if(Malloc_calls[i].type == UNDEFINED){
-			char buffer[MAXSTR];
+				qstring buffer;
 			// Store the disassembled text in buf
-			ua_ana0(Malloc_calls[i].address_of_last_size_object_modified);
+			decode_insn(&insn, Malloc_calls[i].address_of_last_size_object_modified);
 
-			generate_disasm_line(cmd.ea, buffer, sizeof(buffer));
-			tag_remove(buffer, buffer, sizeof(buffer));
+			generate_disasm_line(&buffer, insn.ea);
+			tag_remove(&buffer, buffer);
 
 			//qfprintf(f,"get_first_operand disasm instruction: %s\n", instr_clean);
 			if(Malloc_calls[i].address_of_last_size_object_modified != BADADDR)
-				qfprintf(f,"Type: UNDEFINED, at %a %s", Malloc_calls[i].address_of_last_size_object_modified, buffer);//shouldnt be here
+				qfprintf(f,"Type: UNDEFINED, at %a %s", Malloc_calls[i].address_of_last_size_object_modified, buffer.c_str());//shouldnt be here
 			else
 				qfprintf(f,"Type: UNDEFINED, last modif lost :(");
 		}
@@ -757,7 +765,7 @@ void pretty_printing_ex(FILE* f, TFuncMalloc func)
 
 }
 
-void IDAP_run(int arg)
+bool IDAP_run(size_t arg)
 {
 	FILE *f, *f2;
 	char *filename = construct_output_filename(".import_allocs.txt");
@@ -878,7 +886,7 @@ void IDAP_run(int arg)
 	qfclose( f2 );
 
 
-	return ;
+	return true;
 }
 
 
